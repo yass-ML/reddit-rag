@@ -1,14 +1,39 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from reddit_rag.config import AppConfig, ModelsConfig, SubredditEntry, SubredditsConfig
+from reddit_rag.paths import resolve_config_dir
 
 SUBREDDITS_FILENAME = "subreddits.yaml"
 MODELS_FILENAME = "models.yaml"
+
+
+@dataclass(frozen=True)
+class SubredditEntry:
+    name: str
+    max_posts: int | None = None
+    max_comments: int | None = None
+
+
+@dataclass(frozen=True)
+class SubredditsConfig:
+    subreddits: list[SubredditEntry]
+
+
+@dataclass(frozen=True)
+class ModelsConfig:
+    embedding_model: str
+    chat_model: str
+
+
+@dataclass(frozen=True)
+class AppConfig:
+    subreddits: SubredditsConfig
+    models: ModelsConfig
 
 
 def _require_mapping(data: Any, path: Path, label: str) -> dict[str, Any]:
@@ -102,10 +127,10 @@ def load_models(path: Path) -> ModelsConfig:
     return ModelsConfig(embedding_model=emb.strip(), chat_model=chat.strip())
 
 
-def load_app_config(config_dir: Path) -> AppConfig:
-    config_dir = config_dir.resolve()
-    sub_path = config_dir / SUBREDDITS_FILENAME
-    models_path = config_dir / MODELS_FILENAME
+def load_app_config(config_dir: Path | None = None) -> AppConfig:
+    resolved_config_dir = (config_dir or resolve_config_dir()).resolve()
+    sub_path = resolved_config_dir / SUBREDDITS_FILENAME
+    models_path = resolved_config_dir / MODELS_FILENAME
     return AppConfig(
         subreddits=load_subreddits(sub_path),
         models=load_models(models_path),
