@@ -63,10 +63,18 @@ htmlcov/
 *.sqlite
 *.sqlite3
 *.db
-chroma/
 .cache/
-data/raw/
-data/processed/
-data/chroma/
-data/exports/ # TODO ignore data except placeholder files
+# Ignore data directory contents but keep tracked .gitkeep placeholders
+!data/raw/
+data/raw/*
+!data/raw/.gitkeep
+!data/processed/
+data/processed/*
+!data/processed/.gitkeep
+!data/chroma/
+data/chroma/*
+!data/chroma/.gitkeep
+!data/exports/
+data/exports/*
+!data/exports/.gitkeep
 
