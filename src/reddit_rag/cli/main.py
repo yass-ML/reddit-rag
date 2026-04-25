@@ -10,6 +10,11 @@ import yaml
 from reddit_rag import __version__
 from reddit_rag.config import load_app_config
 from reddit_rag.env import load_dotenv_from_project, missing_reddit_env
+from reddit_rag.ingestion.reddit_client import (
+    create_reddit_client,
+    load_reddit_client_settings_from_env,
+    smoke_test_reddit_client,
+)
 
 
 def _cmd_validate_config(args: argparse.Namespace) -> int:
@@ -67,6 +72,28 @@ def _cmd_check_env(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_reddit_smoke_test(args: argparse.Namespace) -> int:
+    load_dotenv_from_project()
+    try:
+        settings = load_reddit_client_settings_from_env()
+        client = create_reddit_client(settings)
+        resolved_subreddit = smoke_test_reddit_client(client, subreddit_name=args.subreddit)
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"Reddit smoke test failed: {e}", file=sys.stderr)
+        return 1
+
+    print(
+        "Reddit smoke test passed: "
+        f"subreddit={resolved_subreddit}, "
+        f"user_agent={settings.user_agent}",
+        file=sys.stdout,
+    )
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="reddit-rag", description="Local Reddit RAG tooling.")
     parser.add_argument(
@@ -93,6 +120,14 @@ def main() -> None:
 
     p_env = sub.add_parser("check-env", help="Verify required Reddit API credentials are set.")
     p_env.set_defaults(func=_cmd_check_env)
+
+    p_smoke = sub.add_parser("reddit-smoke-test", help="Create a Reddit client and run a read-only smoke test.")
+    p_smoke.add_argument(
+        "--subreddit",
+        default="redditdev",
+        help="Public subreddit name used for the smoke test (default: redditdev).",
+    )
+    p_smoke.set_defaults(func=_cmd_reddit_smoke_test)
 
     args = parser.parse_args()
     code = args.func(args)

@@ -6,8 +6,15 @@ Do not scrape Reddit HTML and do not attempt to bypass rate limits.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any
+
+from reddit_rag.env import (
+    REDDIT_CLIENT_ID,
+    REDDIT_CLIENT_SECRET,
+    REDDIT_USER_AGENT,
+)
 
 
 @dataclass(frozen=True)
@@ -19,14 +26,41 @@ class RedditClientSettings:
     user_agent: str
 
 
-def create_reddit_client(_settings: RedditClientSettings) -> Any:
-    """Create and return a configured Reddit API client.
+def load_reddit_client_settings_from_env() -> RedditClientSettings:
+    """Build validated client settings from environment variables."""
+    values = {
+        REDDIT_CLIENT_ID: os.environ.get(REDDIT_CLIENT_ID, "").strip(),
+        REDDIT_CLIENT_SECRET: os.environ.get(REDDIT_CLIENT_SECRET, "").strip(),
+        REDDIT_USER_AGENT: os.environ.get(REDDIT_USER_AGENT, "").strip(),
+    }
+    missing = [name for name, value in values.items() if not value]
+    if missing:
+        missing_fmt = ", ".join(missing)
+        raise ValueError(f"Missing required Reddit client environment variables: {missing_fmt}")
 
-    TODO:
-    - Wire this to PRAW once ingestion work begins.
-    - Keep request behavior compliant with Reddit API terms and limits.
-    """
-    raise NotImplementedError("PRAW client creation is not implemented yet.")
+    return RedditClientSettings(
+        client_id=values[REDDIT_CLIENT_ID],
+        client_secret=values[REDDIT_CLIENT_SECRET],
+        user_agent=values[REDDIT_USER_AGENT],
+    )
+
+
+def create_reddit_client(settings: RedditClientSettings) -> Any:
+    """Create and return a configured Reddit API client."""
+    import praw
+
+    return praw.Reddit(
+        client_id=settings.client_id,
+        client_secret=settings.client_secret,
+        user_agent=settings.user_agent,
+    )
+
+
+def smoke_test_reddit_client(client: Any, subreddit_name: str = "redditdev") -> str:
+    """Perform a small read-only API request to verify connectivity."""
+    subreddit = client.subreddit(subreddit_name)
+    # Force an API call by reading a lazily-fetched attribute.
+    return str(subreddit.display_name)
 
 
 def fetch_subreddit_stream(
