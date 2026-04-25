@@ -21,7 +21,9 @@ from reddit_rag.env import (
 )
 from reddit_rag.ingestion.raw_ingestion import fetch_thread_to_raw, ingest_subreddit_raw
 from reddit_rag.ingestion.reddit_source import JsonRedditSource, RedditJsonResponse, RedditSourceError
-from reddit_rag.paths import resolve_processed_dir
+from reddit_rag.paths import resolve_chroma_dir, resolve_processed_dir
+from reddit_rag.rag.retrieve import RetrievalResult, retrieve_relevant_chunks
+from reddit_rag.storage import VectorStore
 from reddit_rag.processing.chunk import chunk_records, chunk_to_dict
 from reddit_rag.processing.chunks_io import (
     default_chunks_jsonl_path,
@@ -141,6 +143,80 @@ def _cmd_embed_smoke(args: argparse.Namespace) -> int:
         f"preview_first_dims={preview}",
         file=sys.stdout,
     )
+    return 0
+
+
+def _format_retrieval_debug(i: int, r: RetrievalResult) -> str:
+    sub = ""
+    s = r.metadata.get("subreddit")
+    if isinstance(s, str) and s.strip():
+        sub = s.strip()
+    lines = [
+        f"[{i}] score={r.score}  source_type={r.source_type}  subreddit={sub}",
+    ]
+    lines.append(f"title: {r.source_title}" if r.source_title else "title: (empty)")
+    if r.source_permalink:
+        lines.append(f"permalink: {r.source_permalink}")
+    else:
+        lines.append("permalink: (empty)")
+    lines.append(f"chunk_id: {r.chunk_id}")
+    lines.append("text:")
+    text = r.text if r.text.strip() else "[empty text]"
+    lines.append(text)
+    lines.append("-" * 72)
+    return "\n".join(lines)
+
+
+def _cmd_query_retrieve(args: argparse.Namespace) -> int:
+    load_dotenv_from_project()
+    config_dir = Path(args.config_dir).expanduser().resolve() if args.config_dir else None
+    try:
+        cfg = load_app_config(config_dir=config_dir)
+    except (FileNotFoundError, ValueError) as e:
+        print(str(e), file=sys.stderr)
+        return 1
+
+    host = args.ollama_host.strip() if args.ollama_host else None
+    chroma_path = (
+        Path(args.chroma_dir).expanduser().resolve() if args.chroma_dir else resolve_chroma_dir()
+    )
+    client = OllamaEmbeddingClient(cfg.models.embedding_model, host=host)
+    store = VectorStore(chroma_path)
+    try:
+        results = retrieve_relevant_chunks(
+            args.query,
+            embedding_client=client,
+            vector_store=store,
+            top_k=args.top_k,
+            subreddit=args.subreddit,
+        )
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    except EmbeddingError as e:
+        print(f"Retrieval failed (embedding): {e}", file=sys.stderr)
+        return 1
+
+    if not results:
+        print("No results. Index chunk embeddings into Chroma to retrieve matches.", file=sys.stderr)
+        return 0
+
+    if args.debug:
+        for i, r in enumerate(results, start=1):
+            print(_format_retrieval_debug(i, r), file=sys.stdout)
+        return 0
+
+    for r in results:
+        row: dict[str, Any] = {
+            "chunk_id": r.chunk_id,
+            "text": r.text,
+            "score": r.score,
+            "metadata": r.metadata,
+            "source_type": r.source_type,
+            "source_title": r.source_title,
+            "source_permalink": r.source_permalink,
+        }
+        print(json.dumps(row, ensure_ascii=False), file=sys.stdout)
     return 0
 
 
@@ -583,6 +659,43 @@ def main() -> None:
         help="If > 0, include the first N dimensions in the summary line (default: 0).",
     )
     p_embed_smoke.set_defaults(func=_cmd_embed_smoke)
+
+    p_qr = sub.add_parser(
+        "query-retrieve",
+        help="Embed a query and print top K similar chunks (no LLM). Requires Chroma to contain embedded chunks.",
+    )
+    p_qr.add_argument("query", help="Search question or keywords.")
+    p_qr.add_argument(
+        "--config-dir",
+        help="Optional config directory containing subreddits.yaml and models.yaml.",
+    )
+    p_qr.add_argument(
+        "--top-k",
+        type=_positive_int,
+        default=5,
+        help="Number of chunks to return (default: 5).",
+    )
+    p_qr.add_argument(
+        "--subreddit",
+        help=(
+            "If set, only chunks with this subreddit in storage metadata are searched "
+            "(exact match, case-sensitive; use the same string as in normalized data)."
+        ),
+    )
+    p_qr.add_argument(
+        "--ollama-host",
+        help="Override Ollama base URL (otherwise OLLAMA_HOST env or default applies).",
+    )
+    p_qr.add_argument(
+        "--chroma-dir",
+        help="Chroma persist directory (default: REDDIT_RAG_CHROMA_DIR or <data>/chroma).",
+    )
+    p_qr.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print labeled score, source type, subreddit, title, permalink, and chunk text for each hit.",
+    )
+    p_qr.set_defaults(func=_cmd_query_retrieve)
 
     p_thread = sub.add_parser("fetch-thread", help="Fetch one Reddit thread JSON payload into raw storage.")
     p_thread.add_argument("permalink", help="Reddit thread permalink or URL.")
