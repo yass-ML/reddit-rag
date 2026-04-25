@@ -1,4 +1,4 @@
-from reddit_rag.cli import main
+from reddit_rag.cli.main import main
 
 if __name__ == "__main__":
     main()
