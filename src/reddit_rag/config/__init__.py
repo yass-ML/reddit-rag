@@ -6,6 +6,7 @@ from reddit_rag.config.load_config import (
     load_app_config,
     load_models,
     load_subreddits,
+    save_subreddits,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "load_app_config",
     "load_models",
     "load_subreddits",
+    "save_subreddits",
 ]

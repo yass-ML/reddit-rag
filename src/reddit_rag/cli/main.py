@@ -13,6 +13,7 @@ import yaml
 from reddit_rag import __version__
 from reddit_rag.config import load_app_config
 from reddit_rag.embeddings import EmbeddingError, OllamaEmbeddingClient
+from reddit_rag.embeddings.index_chunks import index_chunks_jsonl
 from reddit_rag.env import (
     load_dotenv_from_project,
     load_reddit_source_settings_from_env,
@@ -625,6 +626,59 @@ def _cmd_chunk(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_index_chunks(args: argparse.Namespace) -> int:
+    load_dotenv_from_project()
+    config_dir = Path(args.config_dir).expanduser().resolve() if args.config_dir else None
+    try:
+        cfg = load_app_config(config_dir=config_dir)
+    except (FileNotFoundError, ValueError) as e:
+        print(str(e), file=sys.stderr)
+        return 1
+
+    processed_root = (
+        Path(args.processed_dir).expanduser().resolve() if args.processed_dir else resolve_processed_dir()
+    )
+    if args.chunks:
+        chunks_path = Path(args.chunks).expanduser().resolve()
+    elif args.subreddit:
+        chunks_path = default_chunks_jsonl_path(processed_root, args.subreddit)
+    else:
+        print("Specify --subreddit NAME or --chunks PATH.", file=sys.stderr)
+        return 1
+
+    chroma_path = (
+        Path(args.chroma_dir).expanduser().resolve() if args.chroma_dir else resolve_chroma_dir()
+    )
+    host = args.ollama_host.strip() if args.ollama_host else None
+    client = OllamaEmbeddingClient(cfg.models.embedding_model, host=host)
+    store = VectorStore(chroma_path)
+    try:
+        summary = index_chunks_jsonl(
+            chunks_path,
+            embedding_client=client,
+            vector_store=store,
+            batch_size=args.batch_size,
+        )
+    except (ValueError, OSError) as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    except EmbeddingError as e:
+        print(f"Indexing failed (embedding): {e}", file=sys.stderr)
+        return 1
+
+    print(
+        "Indexed chunks: "
+        f"path={summary.chunks_path} "
+        f"rows_seen={summary.rows_seen} "
+        f"indexed={summary.indexed} "
+        f"skipped_empty_text={summary.skipped_empty_text} "
+        f"vector_count={summary.vector_count} "
+        f"chroma_dir={chroma_path}",
+        file=sys.stdout,
+    )
+    return 0
+
+
 def _first_listing_post_id(response: RedditJsonResponse) -> str | None:
     if not isinstance(response.payload, dict):
         return None
@@ -963,6 +1017,38 @@ def main() -> None:
         help="Print chunk JSON to stdout instead of writing JSONL.",
     )
     p_chunk.set_defaults(func=_cmd_chunk)
+
+    p_index = sub.add_parser(
+        "index-chunks",
+        help="Embed chunk JSONL rows and upsert them into the persistent Chroma collection.",
+    )
+    p_index.add_argument(
+        "--subreddit",
+        help="Subreddit name; reads <processed>/<name>/chunks.jsonl.",
+    )
+    p_index.add_argument("--chunks", help="Explicit path to chunks.jsonl.")
+    p_index.add_argument(
+        "--processed-dir",
+        help="Processed data root for default chunk paths (default: REDDIT_RAG_PROCESSED_DIR or <project>/data/processed).",
+    )
+    p_index.add_argument(
+        "--chroma-dir",
+        help="Chroma persist directory (default: REDDIT_RAG_CHROMA_DIR or <data>/chroma).",
+    )
+    p_index.add_argument(
+        "--batch-size",
+        type=_positive_int,
+        help="Optional number of chunk texts per Ollama embedding request.",
+    )
+    p_index.add_argument(
+        "--config-dir",
+        help="Optional config directory containing subreddits.yaml and models.yaml.",
+    )
+    p_index.add_argument(
+        "--ollama-host",
+        help="Override Ollama base URL (otherwise OLLAMA_HOST env or default applies).",
+    )
+    p_index.set_defaults(func=_cmd_index_chunks)
 
     args = parser.parse_args()
     code = args.func(args)

@@ -12,18 +12,20 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { getIngestionStatus } from "@/lib/mock-api";
+import { getLiveIngestionStatus } from "@/lib/live-api";
+
+export const dynamic = "force-dynamic";
 
 export default async function IngestionStatusPage() {
-  const ingestionRun = await getIngestionStatus();
+  const ingestionRun = await getLiveIngestionStatus();
 
   return (
     <div className="mx-auto max-w-6xl">
       <PageHeader
         eyebrow="Ingestion Status"
-        title="Preview the local pipeline without running ingestion."
-        description="This page establishes how the frontend will display the future Reddit API fetch, normalization, chunking, and embedding pipeline."
-        badge="Mock pipeline"
+        title="Inspect local pipeline readiness."
+        description="This page reads the backend status for raw Reddit payloads, normalized JSONL, chunks, and Chroma vectors."
+        badge="Live pipeline"
       />
 
       <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
@@ -35,10 +37,10 @@ export default async function IngestionStatusPage() {
               <div>
                 <CardTitle>Pipeline steps</CardTitle>
                 <CardDescription>
-                  Contract states the Python backend will update later.
+                  Current local files and vector index readiness reported by FastAPI.
                 </CardDescription>
               </div>
-              <Badge variant="warning">No worker running</Badge>
+              <Badge variant="warning">Manual pipeline</Badge>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -72,7 +74,7 @@ export default async function IngestionStatusPage() {
 
             <Button asChild>
               <Link href="/query">
-                Ask a mocked question
+                Ask a live question
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </Link>
             </Button>

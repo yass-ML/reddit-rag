@@ -18,7 +18,7 @@ export function IngestionStatusCard({ run }: { run: IngestionRun }) {
           <div>
             <CardTitle>Ingestion status</CardTitle>
             <CardDescription>
-              Mocked pipeline preview for the future Python worker.
+              Local pipeline readiness reported by the Python backend.
             </CardDescription>
           </div>
           <StatusBadge status={run.status} />

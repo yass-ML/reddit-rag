@@ -15,14 +15,14 @@ const settings = [
   {
     icon: HardDrive,
     title: "Local storage path",
-    description: "Future backend location for raw payloads, SQLite metadata, and Chroma data.",
+    description: "Backend location for raw payloads, processed JSONL, SQLite metadata, and Chroma data.",
     value: "./data",
   },
   {
     icon: Server,
     title: "Local model provider",
-    description: "Placeholder for later Ollama generation and embedding model selection.",
-    value: "Ollama (planned)",
+    description: "Ollama generation and embedding model selection is read from backend config.",
+    value: "Ollama",
   },
   {
     icon: KeyRound,
@@ -38,8 +38,8 @@ export default function SettingsPage() {
       <PageHeader
         eyebrow="Settings"
         title="Local-first settings without secrets in the browser."
-        description="This page documents future backend configuration while avoiding auth, Reddit credentials, or real ingestion in the frontend."
-        badge="Safe placeholders"
+        description="This page documents local backend configuration while avoiding auth and Reddit credentials in the frontend."
+        badge="Local backend"
       />
 
       <div className="grid gap-6">
@@ -52,7 +52,7 @@ export default function SettingsPage() {
               <div>
                 <CardTitle>Privacy stance</CardTitle>
                 <CardDescription className="text-green-900/70">
-                  The frontend only uses deterministic fixtures. It does not expose Reddit API secrets,
+                  The frontend talks to your local FastAPI server. It does not expose Reddit API secrets,
                   authenticate users, or send subreddit data to a hosted RAG service.
                 </CardDescription>
               </div>
@@ -83,16 +83,16 @@ export default function SettingsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Future backend endpoint</CardTitle>
+            <CardTitle>Backend endpoint</CardTitle>
             <CardDescription>
-              Local API base URL placeholder for when FastAPI is introduced.
+              Local API base URL used by the live frontend calls.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
             <Label htmlFor="api-url">API base URL</Label>
             <Input id="api-url" defaultValue="http://localhost:8000" disabled />
             <p className="text-xs text-muted-foreground">
-              Disabled intentionally. The current milestone uses `mock-api.ts` only.
+              Configure this with `NEXT_PUBLIC_REDDIT_RAG_API_BASE_URL` before starting Next.js.
             </p>
           </CardContent>
         </Card>

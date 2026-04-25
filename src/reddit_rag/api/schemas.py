@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -109,6 +110,74 @@ class QueryExportRequest(BaseModel):
 class QueryExportResponse(BaseModel):
     filename: str
     path: str
+
+
+class HealthResponse(BaseModel):
+    status: str
+    embedding_model: str
+    generation_model: str
+    chroma_count: int
+
+
+class SubredditConfigModel(BaseModel):
+    id: str
+    workspace_id: str = "local"
+    name: str
+    description: str = ""
+    post_limit: int
+    comment_depth: int
+    timeframe: str = "all"
+    status: str
+    last_ingested_at: str | None = None
+
+
+_SUBREDDIT_NAME_RE = re.compile(r"^[A-Za-z0-9_]{3,21}$")
+
+
+class SubredditCreateRequest(BaseModel):
+    name: str = Field(min_length=1)
+    max_posts: int = Field(default=100, ge=0)
+    max_comments: int = Field(default=1000, ge=0)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_subreddit_name(cls, value: str) -> str:
+        stripped = value.strip()
+        if stripped.lower().startswith("r/"):
+            stripped = stripped[2:].lstrip("/")
+        if not _SUBREDDIT_NAME_RE.fullmatch(stripped):
+            raise ValueError(
+                "name must be a valid subreddit handle (3–21 letters, numbers, underscores; optional r/ prefix)"
+            )
+        return stripped
+
+
+class IngestionStepModel(BaseModel):
+    id: str
+    label: str
+    description: str
+    status: str
+    count: int | None = None
+
+
+class SubredditIngestionStatusModel(BaseModel):
+    subreddit: str
+    status: str
+    posts_seen: int
+    comments_seen: int
+    chunks_ready: int
+    message: str
+
+
+class IngestionRunResponse(BaseModel):
+    id: str
+    workspace_id: str = "local"
+    started_at: str
+    finished_at: str | None = None
+    status: str
+    progress: int
+    steps: list[IngestionStepModel]
+    subreddit_statuses: list[SubredditIngestionStatusModel]
 
 
 class ErrorDetail(BaseModel):

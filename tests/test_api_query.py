@@ -175,6 +175,99 @@ class ApiQueryTests(unittest.TestCase):
                 self.assertEqual(response.status_code, status)
                 self.assertEqual(response.json()["error"]["code"], code)
 
+    def test_health_endpoint_returns_live_readiness(self) -> None:
+        with patch.object(
+            api_app,
+            "_health_response",
+            return_value={
+                "status": "ready",
+                "embedding_model": "embed",
+                "generation_model": "chat",
+                "chroma_count": 12,
+            },
+        ):
+            client = TestClient(create_app())
+            response = client.get("/api/health")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["chroma_count"], 12)
+
+    def test_live_data_endpoints_return_frontend_shapes(self) -> None:
+        with (
+            patch.object(
+                api_app,
+                "_subreddit_configs",
+                return_value=[
+                    {
+                        "id": "sr-ClaudeAI",
+                        "workspace_id": "local",
+                        "name": "ClaudeAI",
+                        "description": "Configured local ingestion target for r/ClaudeAI.",
+                        "post_limit": 20,
+                        "comment_depth": 100,
+                        "timeframe": "all",
+                        "status": "ready",
+                        "last_ingested_at": None,
+                    }
+                ],
+            ),
+            patch.object(
+                api_app,
+                "_sources",
+                return_value=[
+                    {
+                        "id": "src-001",
+                        "citation_index": 1,
+                        "chunk_id": "chunk-1",
+                        "source_id": "post_abc",
+                        "subreddit": "ClaudeAI",
+                        "text": "source text",
+                        "score": 0.0,
+                        "metadata": {
+                            "reddit_id": "abc",
+                            "post_reddit_id": "abc",
+                            "title": "Title",
+                            "permalink": "/r/ClaudeAI/comments/abc/title/",
+                            "score": 1,
+                            "chunk_index": 0,
+                        },
+                        "source_permalink": "/r/ClaudeAI/comments/abc/title/",
+                        "source_title": "Title",
+                        "source_type": "post",
+                        "author": None,
+                        "source_score": 1,
+                        "excerpt": "source text",
+                        "local_raw_path": "",
+                    }
+                ],
+            ),
+            patch.object(
+                api_app,
+                "_ingestion_status",
+                return_value={
+                    "id": "local-ingestion-status",
+                    "workspace_id": "local",
+                    "started_at": "2026-04-25T18:00:00Z",
+                    "finished_at": None,
+                    "status": "ready",
+                    "progress": 100,
+                    "steps": [],
+                    "subreddit_statuses": [],
+                },
+            ),
+        ):
+            client = TestClient(create_app())
+            subreddits = client.get("/api/subreddits")
+            sources = client.get("/api/sources")
+            ingestion = client.get("/api/ingestion/status")
+
+        self.assertEqual(subreddits.status_code, 200)
+        self.assertEqual(subreddits.json()[0]["name"], "ClaudeAI")
+        self.assertEqual(sources.status_code, 200)
+        self.assertEqual(sources.json()[0]["chunk_id"], "chunk-1")
+        self.assertEqual(ingestion.status_code, 200)
+        self.assertEqual(ingestion.json()["progress"], 100)
+
 
 if __name__ == "__main__":
     unittest.main()

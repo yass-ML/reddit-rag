@@ -5,16 +5,17 @@ import {
   getLatestAnswer,
   listQueryTemplates,
   listQueryThemeInsights,
-  listSources,
-  listSubreddits,
 } from "@/lib/mock-api";
+import { listLiveSources, listLiveSubreddits } from "@/lib/live-api";
+
+export const dynamic = "force-dynamic";
 
 export default async function QueryWorkspacePage() {
   const [answer, thread, sources, subreddits, templates, themes] = await Promise.all([
     getLatestAnswer(),
     getChatThread(),
-    listSources(),
-    listSubreddits(),
+    listLiveSources(),
+    listLiveSubreddits(),
     listQueryTemplates(),
     listQueryThemeInsights(),
   ]);

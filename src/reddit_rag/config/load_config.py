@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -100,6 +101,47 @@ def load_subreddits(path: Path) -> SubredditsConfig:
         )
 
     return SubredditsConfig(subreddits=entries)
+
+
+def save_subreddits(path: Path, cfg: SubredditsConfig) -> None:
+    """Write ``subreddits.yaml`` atomically and validate with :func:`load_subreddits`."""
+    path = path.resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    header = (
+        "# Subreddit ingestion targets.\n"
+        "#\n"
+        "# subreddits: list of objects with:\n"
+        "#   name            — subreddit name without \"r/\" (required)\n"
+        "#   max_posts       — optional cap on submissions to fetch per subreddit\n"
+        "#   max_comments    — optional cap on total comments to fetch per subreddit\n"
+        "\n"
+    )
+    items: list[dict[str, Any]] = []
+    for entry in cfg.subreddits:
+        row: dict[str, Any] = {"name": entry.name}
+        if entry.max_posts is not None:
+            row["max_posts"] = entry.max_posts
+        if entry.max_comments is not None:
+            row["max_comments"] = entry.max_comments
+        items.append(row)
+    body = yaml.dump(
+        {"subreddits": items},
+        default_flow_style=False,
+        allow_unicode=True,
+        sort_keys=False,
+    )
+    content = header + body
+    tmp = path.with_name(f"{path.name}.tmp")
+    try:
+        tmp.write_text(content, encoding="utf-8")
+        load_subreddits(tmp)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+    os.replace(tmp, path)
 
 
 def load_models(path: Path) -> ModelsConfig:

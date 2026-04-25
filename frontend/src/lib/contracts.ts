@@ -127,6 +127,13 @@ export interface SubredditConfig {
   last_ingested_at: string | null;
 }
 
+/** Payload for `POST /api/subreddits` (persisted as `max_posts` / `max_comments` in subreddits.yaml). */
+export interface SubredditCreateInput {
+  name: string;
+  max_posts: number;
+  max_comments: number;
+}
+
 export interface IngestionRun {
   id: string;
   workspace_id: string;

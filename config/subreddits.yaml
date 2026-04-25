@@ -6,15 +6,15 @@
 #   max_comments    — optional cap on total comments to fetch per subreddit
 
 subreddits:
-  - name: learnpython
-    max_posts: 200
-    max_comments: 1000
-  - name: LocalLLaMA
-    max_posts: 100
-    max_comments: 500
-  - name: FashionReps
-    max_posts: 10
-    max_comments: 10
-  - name: ClaudeAI
-    max_posts: 20
-    max_comments: 100
+- name: learnpython
+  max_posts: 200
+  max_comments: 1000
+- name: FashionReps
+  max_posts: 10
+  max_comments: 10
+- name: ClaudeAI
+  max_posts: 20
+  max_comments: 100
+- name: ClaudeCode
+  max_posts: 1000
+  max_comments: 1000

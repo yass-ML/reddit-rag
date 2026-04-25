@@ -14,13 +14,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { getIngestionStatus, listSources, listWorkspaces } from "@/lib/mock-api";
+import { listWorkspaces } from "@/lib/mock-api";
+import { getLiveIngestionStatus, listLiveSources } from "@/lib/live-api";
+
+export const dynamic = "force-dynamic";
 
 export default async function Dashboard() {
   const [workspaces, ingestionRun, sources] = await Promise.all([
     listWorkspaces(),
-    getIngestionStatus(),
-    listSources(),
+    getLiveIngestionStatus(),
+    listLiveSources(3),
   ]);
   const featuredWorkspace = workspaces[0];
 
@@ -28,9 +31,9 @@ export default async function Dashboard() {
     <div className="mx-auto max-w-7xl">
       <PageHeader
         eyebrow="Dashboard"
-        title="Build a local subreddit evidence base before the backend exists."
-        description="Create research spaces, stage subreddit targets, inspect mocked ingestion readiness, and preview the cited RAG contract the Python backend will later implement."
-        badge="Frontend foundation"
+        title="Build and test a local subreddit evidence base."
+        description="Inspect local ingestion readiness, open the live query workspace, and audit sources returned by the Python backend."
+        badge="Live backend"
       />
 
       <div className="grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
@@ -93,7 +96,7 @@ export default async function Dashboard() {
               Inspectable source trail
             </h2>
             <p className="text-sm text-muted-foreground">
-              Every mocked answer is grounded in source cards that preview the backend evidence contract.
+              Indexed chunks appear here once Chroma contains embedded subreddit evidence.
             </p>
           </div>
           <Button asChild variant="outline">
