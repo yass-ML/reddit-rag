@@ -19,7 +19,7 @@ Frontend:
 Backend later:
 - Python
 - FastAPI
-- PRAW
+- Reddit JSON source adapter
 - SQLite
 - Chroma
 - Ollama

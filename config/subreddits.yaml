@@ -1,0 +1,20 @@
+# Subreddit ingestion targets.
+#
+# subreddits: list of objects with:
+#   name            — subreddit name without "r/" (required)
+#   max_posts       — optional cap on submissions to fetch per subreddit
+#   max_comments    — optional cap on total comments to fetch per subreddit
+
+subreddits:
+  - name: learnpython
+    max_posts: 200
+    max_comments: 1000
+  - name: LocalLLaMA
+    max_posts: 100
+    max_comments: 500
+  - name: FashionReps
+    max_posts: 10
+    max_comments: 10
+  - name: ClaudeAI
+    max_posts: 20
+    max_comments: 100
