@@ -12,6 +12,7 @@ import yaml
 
 from reddit_rag import __version__
 from reddit_rag.config import load_app_config
+from reddit_rag.embeddings import EmbeddingError, OllamaEmbeddingClient
 from reddit_rag.env import (
     load_dotenv_from_project,
     load_reddit_source_settings_from_env,
@@ -105,6 +106,39 @@ def _cmd_check_env(_args: argparse.Namespace) -> int:
         "Reddit source environment is valid: "
         f"mode={reddit_source_mode()}, "
         f"user_agent={settings.user_agent if settings else ''}",
+        file=sys.stdout,
+    )
+    return 0
+
+
+def _cmd_embed_smoke(args: argparse.Namespace) -> int:
+    load_dotenv_from_project()
+    config_dir = Path(args.config_dir).expanduser().resolve() if args.config_dir else None
+    try:
+        cfg = load_app_config(config_dir=config_dir)
+    except (FileNotFoundError, ValueError) as e:
+        print(str(e), file=sys.stderr)
+        return 1
+
+    host = args.ollama_host.strip() if args.ollama_host else None
+    client = OllamaEmbeddingClient(cfg.models.embedding_model, host=host)
+    text = args.text
+    try:
+        vec = client.embed_text(text)
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    except EmbeddingError as e:
+        print(f"Embedding smoke test failed: {e}", file=sys.stderr)
+        return 1
+
+    preview_n = max(0, args.preview_dims)
+    preview = vec[:preview_n] if preview_n else []
+    print(
+        "Embedding smoke test passed: "
+        f"model={client.model}, "
+        f"dimensions={len(vec)}, "
+        f"preview_first_dims={preview}",
         file=sys.stdout,
     )
     return 0
@@ -524,6 +558,31 @@ def main() -> None:
         help="Public subreddit name used for the smoke test (default: redditdev).",
     )
     p_json_smoke.set_defaults(func=_cmd_json_smoke_test)
+
+    p_embed_smoke = sub.add_parser(
+        "embed-smoke",
+        help="Call the configured Ollama embedding model once and print vector shape.",
+    )
+    p_embed_smoke.add_argument(
+        "--config-dir",
+        help="Optional config directory containing subreddits.yaml and models.yaml.",
+    )
+    p_embed_smoke.add_argument(
+        "--text",
+        default="hello from reddit-rag",
+        help="Text to embed (default: hello from reddit-rag).",
+    )
+    p_embed_smoke.add_argument(
+        "--ollama-host",
+        help="Override Ollama base URL (otherwise OLLAMA_HOST env or default applies).",
+    )
+    p_embed_smoke.add_argument(
+        "--preview-dims",
+        type=_non_negative_int,
+        default=0,
+        help="If > 0, include the first N dimensions in the summary line (default: 0).",
+    )
+    p_embed_smoke.set_defaults(func=_cmd_embed_smoke)
 
     p_thread = sub.add_parser("fetch-thread", help="Fetch one Reddit thread JSON payload into raw storage.")
     p_thread.add_argument("permalink", help="Reddit thread permalink or URL.")

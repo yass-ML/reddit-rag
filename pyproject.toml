@@ -23,3 +23,8 @@ packages = ["src/reddit_rag"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
