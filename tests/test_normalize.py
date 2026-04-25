@@ -72,6 +72,12 @@ class NormalizeRedditJsonTests(unittest.TestCase):
             post = normalize_submission_payload(post_thing, str(FIXTURE_PATH))
             self.assertEqual(post.body, "", msg=repr(selftext))
 
+    def test_submission_selftext_text_cleaning_applied(self) -> None:
+        post_thing = deepcopy(self.post_thing)
+        post_thing["data"]["selftext"] = "para one\n\n\n\npara two\u200b"
+        post = normalize_submission_payload(post_thing, str(FIXTURE_PATH))
+        self.assertEqual(post.body, "para one\n\npara two")
+
     def test_submission_requires_permalink(self) -> None:
         post_thing = deepcopy(self.post_thing)
         post_thing["data"]["permalink"] = ""

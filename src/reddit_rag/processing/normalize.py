@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from reddit_rag.processing.text_clean import clean_reddit_text
+
 
 @dataclass(frozen=True)
 class NormalizedPost:
@@ -120,10 +122,7 @@ def _string_or_none(value: Any) -> str | None:
 def _clean_body(value: Any) -> str:
     if not isinstance(value, str):
         return ""
-    text = value.strip()
-    if text in {"[deleted]", "[removed]"}:
-        return ""
-    return text
+    return clean_reddit_text(value)
 
 
 def _normalize_author(value: Any) -> str | None:
