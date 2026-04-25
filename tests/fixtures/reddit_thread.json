@@ -1,0 +1,71 @@
+{
+  "source": "reddit_json",
+  "fetched_at": "2026-04-25T00:00:00+00:00",
+  "url": "https://www.reddit.com/r/example/comments/abc123/example_title.json",
+  "status_code": 200,
+  "headers": {},
+  "payload": [
+    {
+      "kind": "Listing",
+      "data": {
+        "children": [
+          {
+            "kind": "t3",
+            "data": {
+              "id": "abc123",
+              "name": "t3_abc123",
+              "subreddit": "example",
+              "title": "Example title",
+              "selftext": "Post body",
+              "author": "example_author",
+              "score": 42,
+              "num_comments": 2,
+              "created_utc": 1713980000.0,
+              "permalink": "/r/example/comments/abc123/example_title/",
+              "url": "https://www.reddit.com/r/example/comments/abc123/example_title/"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "Listing",
+      "data": {
+        "children": [
+          {
+            "kind": "t1",
+            "data": {
+              "id": "def456",
+              "name": "t1_def456",
+              "link_id": "t3_abc123",
+              "parent_id": "t3_abc123",
+              "subreddit": "example",
+              "body": "First comment",
+              "author": "comment_author",
+              "score": 7,
+              "created_utc": 1713981000.0,
+              "permalink": "/r/example/comments/abc123/example_title/def456/",
+              "replies": ""
+            }
+          },
+          {
+            "kind": "t1",
+            "data": {
+              "id": "ghi789",
+              "name": "t1_ghi789",
+              "link_id": "t3_abc123",
+              "parent_id": "t1_def456",
+              "subreddit": "example",
+              "body": "[deleted]",
+              "author": "[deleted]",
+              "score": 1,
+              "created_utc": 1713982000.0,
+              "permalink": "/r/example/comments/abc123/example_title/ghi789/",
+              "replies": ""
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

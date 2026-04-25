@@ -1,1 +1,1 @@
-"""Ingestion package placeholders."""
+"""Reddit ingestion helpers."""

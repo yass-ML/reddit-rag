@@ -12,3 +12,6 @@ subreddits:
   - name: LocalLLaMA
     max_posts: 100
     max_comments: 500
+  - name: FashionReps
+    max_posts: 10
+    max_comments: 10
