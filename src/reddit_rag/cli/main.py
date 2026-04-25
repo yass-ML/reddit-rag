@@ -6,6 +6,7 @@ import sys
 from collections import defaultdict
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -20,6 +21,12 @@ from reddit_rag.env import (
 from reddit_rag.ingestion.raw_ingestion import fetch_thread_to_raw, ingest_subreddit_raw
 from reddit_rag.ingestion.reddit_source import JsonRedditSource, RedditJsonResponse, RedditSourceError
 from reddit_rag.paths import resolve_processed_dir
+from reddit_rag.processing.chunk import chunk_records, chunk_to_dict
+from reddit_rag.processing.chunks_io import (
+    default_chunks_jsonl_path,
+    load_records_from_jsonl,
+    merge_chunk_records_jsonl,
+)
 from reddit_rag.processing.comments import (
     comment_record_to_dict,
     default_comments_jsonl_path,
@@ -353,6 +360,79 @@ def _cmd_ingest_raw(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_chunk(args: argparse.Namespace) -> int:
+    processed_root = (
+        Path(args.processed_dir).expanduser().resolve() if args.processed_dir else resolve_processed_dir()
+    )
+    posts_path: Path | None = None
+    comments_path: Path | None = None
+    out_path: Path
+
+    if args.subreddit:
+        sub = args.subreddit.strip()
+        posts_path = default_posts_jsonl_path(processed_root, sub)
+        comments_path = default_comments_jsonl_path(processed_root, sub)
+        out_path = (
+            Path(args.output).expanduser().resolve()
+            if args.output
+            else default_chunks_jsonl_path(processed_root, sub)
+        )
+    else:
+        if not args.posts and not args.comments:
+            print("Specify --subreddit NAME or at least one of --posts PATH / --comments PATH.", file=sys.stderr)
+            return 1
+        if not args.output:
+            print("When omitting --subreddit, --output PATH is required.", file=sys.stderr)
+            return 1
+        posts_path = Path(args.posts).expanduser().resolve() if args.posts else None
+        comments_path = Path(args.comments).expanduser().resolve() if args.comments else None
+        out_path = Path(args.output).expanduser().resolve()
+
+    if args.chunk_overlap >= args.chunk_size:
+        print("chunk_overlap must be strictly less than chunk_size.", file=sys.stderr)
+        return 1
+
+    records: list[dict[str, Any]] = []
+    try:
+        if posts_path is not None:
+            records.extend(load_records_from_jsonl(posts_path))
+        if comments_path is not None:
+            records.extend(load_records_from_jsonl(comments_path))
+        chunks = chunk_records(records, args.chunk_size, args.chunk_overlap)
+    except (ValueError, OSError) as e:
+        print(str(e), file=sys.stderr)
+        return 1
+
+    if args.pretty:
+        for ch in chunks:
+            print(json.dumps(chunk_to_dict(ch), ensure_ascii=False, indent=2), file=sys.stdout)
+        print(
+            f"Chunk preview: built={len(chunks)} from input_records={len(records)}",
+            file=sys.stdout,
+        )
+        return 0
+
+    row_dicts = [chunk_to_dict(c) for c in chunks]
+    try:
+        result = merge_chunk_records_jsonl(out_path, row_dicts)
+    except (ValueError, OSError) as e:
+        print(str(e), file=sys.stderr)
+        return 1
+
+    print(
+        "Chunks: "
+        f"input_records={len(records)} "
+        f"chunks_built={len(chunks)} "
+        f"merged_jsonl path={result.path} "
+        f"existing={result.existing_count} "
+        f"appended={result.appended} "
+        f"skipped_duplicates={result.skipped_duplicates} "
+        f"total={result.total_after}",
+        file=sys.stdout,
+    )
+    return 0
+
+
 def _first_listing_post_id(response: RedditJsonResponse) -> str | None:
     if not isinstance(response.payload, dict):
         return None
@@ -389,6 +469,16 @@ def _non_negative_int(value: str) -> int:
         raise argparse.ArgumentTypeError("value must be an integer") from e
     if parsed < 0:
         raise argparse.ArgumentTypeError("value must be >= 0")
+    return parsed
+
+
+def _positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError("value must be an integer") from e
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("value must be > 0")
     return parsed
 
 
@@ -523,6 +613,46 @@ def main() -> None:
         help="Print human-readable comment content to stdout.",
     )
     p_norm_comments.set_defaults(func=_cmd_normalize_comments)
+
+    p_chunk = sub.add_parser(
+        "create-chunks",
+        help="Build chunk records from normalized posts/comments JSONL and merge into chunks.jsonl.",
+    )
+    p_chunk.add_argument(
+        "--subreddit",
+        help="Subreddit name; reads <processed>/<name>/posts.jsonl and comments.jsonl.",
+    )
+    p_chunk.add_argument("--posts", help="Explicit path to posts.jsonl (use with --comments and/or --output).")
+    p_chunk.add_argument("--comments", help="Explicit path to comments.jsonl.")
+    p_chunk.add_argument(
+        "--processed-dir",
+        help="Processed data root for default paths (default: REDDIT_RAG_PROCESSED_DIR or <project>/data/processed).",
+    )
+    p_chunk.add_argument(
+        "--output",
+        help=(
+            "JSONL output path. Required when using only --posts/--comments without --subreddit. "
+            "With --subreddit, defaults to <processed>/<subreddit>/chunks.jsonl."
+        ),
+    )
+    p_chunk.add_argument(
+        "--chunk-size",
+        type=_positive_int,
+        default=1500,
+        help="Maximum characters per chunk (default: 1500).",
+    )
+    p_chunk.add_argument(
+        "--chunk-overlap",
+        type=_non_negative_int,
+        default=200,
+        help="Character overlap between consecutive chunks (default: 200; must be < chunk-size).",
+    )
+    p_chunk.add_argument(
+        "--pretty",
+        action="store_true",
+        help="Print chunk JSON to stdout instead of writing JSONL.",
+    )
+    p_chunk.set_defaults(func=_cmd_chunk)
 
     args = parser.parse_args()
     code = args.func(args)

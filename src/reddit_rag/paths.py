@@ -47,3 +47,11 @@ def resolve_chroma_dir() -> Path:
 
 def resolve_exports_dir() -> Path:
     return _resolve_data_subpath("exports", "REDDIT_RAG_EXPORTS_DIR")
+
+
+def resolve_sqlite_path() -> Path:
+    """Default SQLite database path for normalized metadata and ingestion runs."""
+    env = os.environ.get("REDDIT_RAG_SQLITE_PATH")
+    if env:
+        return Path(env).expanduser().resolve()
+    return (resolve_data_root() / "reddit_rag.sqlite").resolve()
