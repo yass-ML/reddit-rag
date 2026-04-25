@@ -6,6 +6,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from reddit_rag.processing.normalize import normalize_comment_payload, normalize_submission_payload
+from reddit_rag.processing.posts import normalize_posts_from_thread_file, post_record_to_dict
 
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "reddit_thread.json"
@@ -63,6 +64,44 @@ class NormalizeRedditJsonTests(unittest.TestCase):
         post = normalize_submission_payload(post_thing, str(FIXTURE_PATH))
 
         self.assertEqual(post.url, "https://example.com/path")
+
+    def test_submission_selftext_missing_or_unsafe_is_empty_body(self) -> None:
+        for selftext in (None, "   ", "[deleted]", "[removed]"):
+            post_thing = deepcopy(self.post_thing)
+            post_thing["data"]["selftext"] = selftext
+            post = normalize_submission_payload(post_thing, str(FIXTURE_PATH))
+            self.assertEqual(post.body, "", msg=repr(selftext))
+
+    def test_submission_requires_permalink(self) -> None:
+        post_thing = deepcopy(self.post_thing)
+        post_thing["data"]["permalink"] = ""
+
+        with self.assertRaises(ValueError) as ctx:
+            normalize_submission_payload(post_thing, str(FIXTURE_PATH))
+        self.assertIn("permalink", str(ctx.exception))
+
+    def test_submission_requires_title(self) -> None:
+        post_thing = deepcopy(self.post_thing)
+        post_thing["data"]["title"] = "  "
+
+        with self.assertRaises(ValueError) as ctx:
+            normalize_submission_payload(post_thing, str(FIXTURE_PATH))
+        self.assertIn("title", str(ctx.exception))
+
+    def test_normalize_raw_thread_file_matches_submission_normalization(self) -> None:
+        posts = normalize_posts_from_thread_file(FIXTURE_PATH)
+        self.assertEqual(len(posts), 1)
+        post = posts[0]
+        expected = normalize_submission_payload(self.post_thing, str(FIXTURE_PATH.resolve()))
+        self.assertEqual(post, expected)
+
+    def test_post_record_to_dict_roundtrip_keys(self) -> None:
+        post = normalize_submission_payload(self.post_thing, str(FIXTURE_PATH))
+        d = post_record_to_dict(post)
+        self.assertEqual(d["id"], post.id)
+        self.assertEqual(d["permalink"], post.permalink)
+        self.assertEqual(d["body"], post.body)
+        self.assertIn("raw_path", d)
 
 
 if __name__ == "__main__":

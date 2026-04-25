@@ -20,3 +20,6 @@ reddit-rag = "reddit_rag.cli.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/reddit_rag"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

@@ -15,3 +15,6 @@ subreddits:
   - name: FashionReps
     max_posts: 10
     max_comments: 10
+  - name: ClaudeAI
+    max_posts: 20
+    max_comments: 100

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+from collections import defaultdict
 from dataclasses import asdict
 from pathlib import Path
 
@@ -17,6 +19,15 @@ from reddit_rag.env import (
 )
 from reddit_rag.ingestion.raw_ingestion import fetch_thread_to_raw, ingest_subreddit_raw
 from reddit_rag.ingestion.reddit_source import JsonRedditSource, RedditJsonResponse, RedditSourceError
+from reddit_rag.paths import resolve_processed_dir
+from reddit_rag.processing.normalize import NormalizedPost
+from reddit_rag.processing.posts import (
+    default_posts_jsonl_path,
+    merge_post_records_jsonl,
+    normalize_posts_from_subreddit,
+    normalize_posts_from_thread_file,
+    post_record_to_dict,
+)
 
 
 def _cmd_validate_config(args: argparse.Namespace) -> int:
@@ -121,6 +132,89 @@ def _cmd_fetch_thread(args: argparse.Namespace) -> int:
         return 1
 
     print(f"Fetched thread JSON: {saved.path}", file=sys.stdout)
+    return 0
+
+
+def _format_post_pretty(post: NormalizedPost) -> str:
+    lines = [
+        f"title: {post.title}",
+        f"subreddit: {post.subreddit}",
+        f"permalink: {post.permalink}",
+        f"id: {post.id} (reddit_id={post.reddit_id})",
+        f"score: {post.score}  comments: {post.num_comments}",
+    ]
+    if post.url:
+        lines.append(f"url: {post.url}")
+    if post.author:
+        lines.append(f"author: {post.author}")
+    if post.created_utc is not None:
+        lines.append(f"created_utc: {post.created_utc}")
+    lines.append(f"raw_path: {post.raw_path}")
+    lines.append("")
+    body = post.body if post.body.strip() else "[empty body]"
+    lines.append(body)
+    lines.append("-" * 72)
+    return "\n".join(lines)
+
+
+def _cmd_normalize_posts(args: argparse.Namespace) -> int:
+    raw_dir = Path(args.raw_dir).expanduser().resolve() if args.raw_dir else None
+    try:
+        if args.thread:
+            path = Path(args.thread).expanduser().resolve()
+            posts = normalize_posts_from_thread_file(path)
+        elif args.subreddit:
+            posts = normalize_posts_from_subreddit(args.subreddit, raw_dir=raw_dir)
+        else:
+            print("Specify --thread PATH or --subreddit NAME.", file=sys.stderr)
+            return 1
+    except (ValueError, OSError) as e:
+        print(str(e), file=sys.stderr)
+        return 1
+
+    records = [post_record_to_dict(p) for p in posts]
+
+    processed_root = (
+        Path(args.processed_dir).expanduser().resolve() if args.processed_dir else resolve_processed_dir()
+    )
+
+    if not args.pretty:
+        if not records:
+            print("No posts normalized (empty input).", file=sys.stdout)
+        else:
+            if args.output:
+                out_path = Path(args.output).expanduser().resolve()
+                result = merge_post_records_jsonl(out_path, records)
+                print(
+                    "Merged JSONL: "
+                    f"path={result.path} "
+                    f"existing={result.existing_count} "
+                    f"appended={result.appended} "
+                    f"skipped_duplicates={result.skipped_duplicates} "
+                    f"total={result.total_after}",
+                    file=sys.stdout,
+                )
+            else:
+                by_sub: defaultdict[str, list] = defaultdict(list)
+                for post in posts:
+                    by_sub[post.subreddit].append(post_record_to_dict(post))
+                for subreddit in sorted(by_sub.keys()):
+                    out_path = default_posts_jsonl_path(processed_root, subreddit)
+                    result = merge_post_records_jsonl(out_path, by_sub[subreddit])
+                    print(
+                        "Merged JSONL: "
+                        f"path={result.path} "
+                        f"existing={result.existing_count} "
+                        f"appended={result.appended} "
+                        f"skipped_duplicates={result.skipped_duplicates} "
+                        f"total={result.total_after}",
+                        file=sys.stdout,
+                    )
+
+    if args.pretty:
+        for post in posts:
+            print(_format_post_pretty(post), file=sys.stdout)
+
     return 0
 
 
@@ -273,6 +367,40 @@ def main() -> None:
         help="Ignore and replace any existing raw ingestion checkpoint.",
     )
     p_ingest.set_defaults(func=_cmd_ingest_raw)
+
+    p_norm = sub.add_parser(
+        "normalize-posts",
+        help="Normalize saved raw thread JSON into NormalizedPost records (JSONL and/or readable output).",
+    )
+    p_norm.add_argument(
+        "--thread",
+        help="Path to one saved raw thread JSON file (under .../threads/<id>.json).",
+    )
+    p_norm.add_argument(
+        "--subreddit",
+        help="Subreddit name; reads all JSON files from <raw-dir>/<name>/threads/.",
+    )
+    p_norm.add_argument(
+        "--raw-dir",
+        help="Override raw data root (default: REDDIT_RAG_RAW_DIR or <project>/data/raw).",
+    )
+    p_norm.add_argument(
+        "--processed-dir",
+        help="Override processed data root for default JSONL paths (default: REDDIT_RAG_PROCESSED_DIR or <project>/data/processed).",
+    )
+    p_norm.add_argument(
+        "--output",
+        help=(
+            "JSONL output path (one NormalizedPost per line). Merges with existing file by reddit_id. "
+            "Default when omitted: <processed>/<subreddit>/posts.jsonl (one file per subreddit)."
+        ),
+    )
+    p_norm.add_argument(
+        "--pretty",
+        action="store_true",
+        help="Print human-readable post content to stdout.",
+    )
+    p_norm.set_defaults(func=_cmd_normalize_posts)
 
     args = parser.parse_args()
     code = args.func(args)

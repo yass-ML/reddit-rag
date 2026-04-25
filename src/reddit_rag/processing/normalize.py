@@ -45,20 +45,24 @@ class NormalizedComment:
 
 
 def normalize_submission_payload(raw_submission: dict[str, Any], raw_path: str) -> NormalizedPost:
-    """Convert a Reddit JSON submission payload into a normalized post record."""
+    """Convert a Reddit JSON submission payload into a normalized post record.
+
+    Required Reddit fields: id, subreddit, title, permalink. Body (selftext) may be
+    empty or absent; see :func:`_clean_body`.
+    """
     data = _unwrap_thing_data(raw_submission)
     reddit_id = _required_string(data, "id")
     return NormalizedPost(
         id=f"post_{reddit_id}",
         reddit_id=reddit_id,
         subreddit=_required_string(data, "subreddit"),
-        title=_string_or_empty(data.get("title")),
+        title=_required_string(data, "title"),
         body=_clean_body(data.get("selftext")),
         author=_normalize_author(data.get("author")),
         score=_int_or_zero(data.get("score")),
         num_comments=_int_or_zero(data.get("num_comments")),
         created_utc=_float_or_none(data.get("created_utc")),
-        permalink=_string_or_empty(data.get("permalink")),
+        permalink=_required_string(data, "permalink"),
         url=_string_or_none(data.get("url")),
         raw_path=raw_path,
     )
