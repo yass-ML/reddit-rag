@@ -10,9 +10,11 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "chromadb>=1.0.0",
+    "fastapi>=0.136.1",
     "ollama>=0.6.1",
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0",
+    "uvicorn>=0.46.0",
 ]
 
 [project.scripts]

@@ -40,7 +40,7 @@ export function QueryEvidenceSidebar({
         <div>
           <h2 className="font-heading text-lg font-semibold">Research context</h2>
           <p className="text-sm text-muted-foreground">
-            Sources, themes, prompts, and debug details stay close to the chat.
+            Sources, themes, prompts, and debug details for the latest answer.
           </p>
         </div>
         <Button
@@ -72,9 +72,15 @@ export function QueryEvidenceSidebar({
 
         <ScrollArea className="h-[calc(100vh-18rem)] min-h-[420px] pr-3">
           <TabsContent value="sources" className="space-y-4">
-            {sources.map((source) => (
-              <SourceCard key={source.id} source={source} />
-            ))}
+            {sources.length > 0 ? (
+              sources.map((source) => <SourceCard key={source.id} source={source} />)
+            ) : (
+              <Card>
+                <CardContent className="p-4 text-sm text-muted-foreground">
+                  No sources returned for the latest answer.
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           <TabsContent value="themes" className="space-y-4">
@@ -113,7 +119,7 @@ export function QueryEvidenceSidebar({
               <CardHeader>
                 <CardTitle className="text-base">Retrieval preview</CardTitle>
                 <CardDescription>
-                  This mirrors the future backend response metadata.
+                  Live backend response metadata for the latest answer.
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-3">

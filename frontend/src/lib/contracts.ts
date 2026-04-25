@@ -44,8 +44,10 @@ export interface ChunkMetadata {
   title: string;
   permalink: string;
   score: number;
-  created_utc: string;
+  created_utc: string | number | null;
   chunk_index: number;
+  chunk_size?: number;
+  chunk_overlap?: number;
 }
 
 export interface Chunk {
@@ -69,6 +71,7 @@ export interface RetrievalResult {
 
 export interface SourceEvidence extends RetrievalResult {
   id: string;
+  citation_index?: number;
   source_id: string;
   subreddit: string;
   author: string | null;
@@ -76,6 +79,8 @@ export interface SourceEvidence extends RetrievalResult {
   comment_count?: number;
   excerpt: string;
   local_raw_path: string;
+  parent_post_title?: string;
+  retrieval_metadata?: Record<string, string | number | boolean | null>;
 }
 
 export interface RagAnswer {
@@ -88,7 +93,8 @@ export interface RagAnswer {
     embedding_model: string;
     generation_model: string;
     top_k: number;
-    mocked: true;
+    subreddit?: string | null;
+    mocked?: boolean;
   };
 }
 
@@ -196,5 +202,18 @@ export interface CreateWorkspaceInput {
 export interface AskQuestionInput {
   workspace_id: string;
   question: string;
+  subreddit?: string;
   top_k?: number;
+}
+
+export interface ExportQueryResultInput {
+  question: string;
+  subreddit?: string | null;
+  answer_text: string;
+  sources: SourceEvidence[];
+}
+
+export interface ExportQueryResultResponse {
+  filename: string;
+  path: string;
 }

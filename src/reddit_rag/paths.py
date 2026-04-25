@@ -17,6 +17,15 @@ def resolve_config_dir() -> Path:
     return (Path.cwd() / "config").resolve()
 
 
+def resolve_query_templates_dir(config_dir: Path | None = None) -> Path:
+    """Directory containing editable ``*.md`` query templates (YAML front matter + body)."""
+    env = os.environ.get("REDDIT_RAG_QUERY_TEMPLATES_DIR")
+    if env:
+        return Path(env).expanduser().resolve()
+    base = config_dir if config_dir is not None else resolve_config_dir()
+    return (Path(base) / "query_templates").resolve()
+
+
 def resolve_data_root() -> Path:
     """Base directory for local data (raw, processed, chroma, exports)."""
     env = os.environ.get("REDDIT_RAG_DATA_DIR")

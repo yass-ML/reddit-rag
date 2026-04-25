@@ -68,7 +68,10 @@ export default async function SourceInspectorPage() {
                 value={`${(selectedSource.score * 100).toFixed(0)}%`}
               />
               <Metadata label="Chunk index" value={selectedSource.metadata.chunk_index.toString()} />
-              <Metadata label="Created UTC" value={selectedSource.metadata.created_utc} />
+              <Metadata
+                label="Created UTC"
+                value={String(selectedSource.metadata.created_utc ?? "unknown")}
+              />
               <Metadata label="Reddit ID" value={selectedSource.metadata.reddit_id} />
             </div>
 
@@ -93,7 +96,7 @@ export default async function SourceInspectorPage() {
                   href={selectedSource.source_permalink}
                   className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
                 >
-                  Mock Reddit permalink
+                  Reddit permalink
                   <ExternalLink className="h-4 w-4" aria-hidden="true" />
                 </a>
               </div>

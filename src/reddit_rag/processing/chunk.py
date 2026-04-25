@@ -125,6 +125,21 @@ def _base_metadata(
     }
     if permalink_if_present and permalink_if_present.strip():
         meta["permalink"] = permalink_if_present.strip()
+    author = _str_field(rec, "author").strip()
+    if author:
+        meta["author"] = author
+    raw_path = _str_field(rec, "raw_path").strip()
+    if raw_path:
+        meta["raw_path"] = raw_path
+    num_comments = rec.get("num_comments")
+    if isinstance(num_comments, int) and not isinstance(num_comments, bool):
+        meta["num_comments"] = num_comments
+    parent_title = (
+        _str_field(rec, "parent_post_title").strip()
+        or _str_field(rec, "post_title").strip()
+    )
+    if parent_title:
+        meta["parent_post_title"] = parent_title
     return meta
 
 

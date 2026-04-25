@@ -21,7 +21,16 @@ from reddit_rag.env import (
 )
 from reddit_rag.ingestion.raw_ingestion import fetch_thread_to_raw, ingest_subreddit_raw
 from reddit_rag.ingestion.reddit_source import JsonRedditSource, RedditJsonResponse, RedditSourceError
-from reddit_rag.paths import resolve_chroma_dir, resolve_processed_dir
+from reddit_rag.paths import resolve_chroma_dir, resolve_processed_dir, resolve_query_templates_dir
+from reddit_rag.rag.answer import answer_question, format_answer_markdown
+from reddit_rag.rag.ollama_chat import ChatError, OllamaChatClient
+from reddit_rag.rag.query_templates import (
+    QueryTemplateError,
+    get_template_by_id,
+    load_query_templates,
+    list_templates_lines,
+    validate_required_templates,
+)
 from reddit_rag.rag.retrieve import RetrievalResult, retrieve_relevant_chunks
 from reddit_rag.storage import VectorStore
 from reddit_rag.processing.chunk import chunk_records, chunk_to_dict
@@ -217,6 +226,79 @@ def _cmd_query_retrieve(args: argparse.Namespace) -> int:
             "source_permalink": r.source_permalink,
         }
         print(json.dumps(row, ensure_ascii=False), file=sys.stdout)
+    return 0
+
+
+def _cmd_query_answer(args: argparse.Namespace) -> int:
+    load_dotenv_from_project()
+    config_dir = Path(args.config_dir).expanduser().resolve() if args.config_dir else None
+    templates_root = resolve_query_templates_dir(config_dir=config_dir)
+
+    if args.list_templates:
+        try:
+            templates = load_query_templates(templates_root)
+            validate_required_templates(templates)
+        except (QueryTemplateError, OSError) as e:
+            print(str(e), file=sys.stderr)
+            return 1
+        print("id\tcategory\ttitle", file=sys.stdout)
+        for line in list_templates_lines(templates):
+            print(line, file=sys.stdout)
+        return 0
+
+    query_text = (args.query or "").strip()
+    if args.template:
+        if not args.subreddit or not str(args.subreddit).strip():
+            print("--subreddit is required when using --template.", file=sys.stderr)
+            return 1
+        try:
+            tmpl = get_template_by_id(templates_root, args.template)
+        except (QueryTemplateError, OSError) as e:
+            print(str(e), file=sys.stderr)
+            return 1
+        query_text = tmpl.prompt.strip()
+        if args.topic and str(args.topic).strip():
+            query_text = query_text + "\n\nAdditional context:\n" + str(args.topic).strip()
+    elif not query_text:
+        print("Provide QUERY text, or use --template ID (with --subreddit), or --list-templates.", file=sys.stderr)
+        return 1
+
+    try:
+        cfg = load_app_config(config_dir=config_dir)
+    except (FileNotFoundError, ValueError) as e:
+        print(str(e), file=sys.stderr)
+        return 1
+
+    host = args.ollama_host.strip() if args.ollama_host else None
+    chroma_path = (
+        Path(args.chroma_dir).expanduser().resolve() if args.chroma_dir else resolve_chroma_dir()
+    )
+    emb_client = OllamaEmbeddingClient(cfg.models.embedding_model, host=host)
+    store = VectorStore(chroma_path)
+    chat = OllamaChatClient(cfg.models.chat_model, host=host)
+    try:
+        results = retrieve_relevant_chunks(
+            query_text,
+            embedding_client=emb_client,
+            vector_store=store,
+            top_k=args.top_k,
+            subreddit=args.subreddit,
+        )
+        out = answer_question(query_text, results, chat_client=chat)
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    except EmbeddingError as e:
+        print(f"Retrieval failed (embedding): {e}", file=sys.stderr)
+        return 1
+    except ChatError as e:
+        print(f"Answer failed (chat): {e}", file=sys.stderr)
+        return 1
+
+    if args.answer_only:
+        print(out.answer_text, file=sys.stdout)
+    else:
+        print(format_answer_markdown(out), file=sys.stdout)
     return 0
 
 
@@ -696,6 +778,62 @@ def main() -> None:
         help="Print labeled score, source type, subreddit, title, permalink, and chunk text for each hit.",
     )
     p_qr.set_defaults(func=_cmd_query_retrieve)
+
+    p_qa = sub.add_parser(
+        "query-answer",
+        help="Retrieve top chunks, then answer with the configured Ollama chat model (RAG).",
+    )
+    p_qa.add_argument(
+        "query",
+        nargs="?",
+        default="",
+        help="Search question or keywords (omit with --list-templates or when using --template).",
+    )
+    p_qa.add_argument(
+        "--list-templates",
+        action="store_true",
+        help="List available query templates from config/query_templates and exit.",
+    )
+    p_qa.add_argument(
+        "--template",
+        metavar="ID",
+        help="Use an editable template prompt from config/query_templates (requires --subreddit).",
+    )
+    p_qa.add_argument(
+        "--topic",
+        help="Optional extra context appended when using --template.",
+    )
+    p_qa.add_argument(
+        "--answer-only",
+        action="store_true",
+        help="Print only the model answer text (no Sources section).",
+    )
+    p_qa.add_argument(
+        "--config-dir",
+        help="Optional config directory containing subreddits.yaml and models.yaml.",
+    )
+    p_qa.add_argument(
+        "--top-k",
+        type=_positive_int,
+        default=5,
+        help="Number of chunks to retrieve and pass to the model (default: 5).",
+    )
+    p_qa.add_argument(
+        "--subreddit",
+        help=(
+            "If set, only chunks with this subreddit in storage metadata are searched "
+            "(exact match, case-sensitive; use the same string as in normalized data)."
+        ),
+    )
+    p_qa.add_argument(
+        "--ollama-host",
+        help="Override Ollama base URL (otherwise OLLAMA_HOST env or default applies).",
+    )
+    p_qa.add_argument(
+        "--chroma-dir",
+        help="Chroma persist directory (default: REDDIT_RAG_CHROMA_DIR or <data>/chroma).",
+    )
+    p_qa.set_defaults(func=_cmd_query_answer)
 
     p_thread = sub.add_parser("fetch-thread", help="Fetch one Reddit thread JSON payload into raw storage.")
     p_thread.add_argument("permalink", help="Reddit thread permalink or URL.")

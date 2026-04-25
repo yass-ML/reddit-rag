@@ -1,7 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { PanelRightClose, PanelRightOpen, Sparkles } from "lucide-react";
+import {
+  Download,
+  Loader2,
+  PanelRightClose,
+  PanelRightOpen,
+  Sparkles,
+} from "lucide-react";
 import type {
   ChatMessage as ChatMessageType,
   ChatThread,
@@ -9,6 +15,7 @@ import type {
   QueryThemeInsight,
   RagAnswer,
   SourceEvidence,
+  SubredditConfig,
 } from "@/lib/contracts";
 import { ChatComposer } from "@/components/chat-composer";
 import { ChatMessage } from "@/components/chat-message";
@@ -23,47 +30,145 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { askLiveQuestion, exportLiveAnswer, LiveApiError } from "@/lib/live-api";
 import { cn } from "@/lib/utils";
 
 export function QueryWorkspace({
   answer,
   thread,
   sources,
+  subreddits,
   templates,
   themes,
 }: {
   answer: RagAnswer;
   thread: ChatThread;
   sources: SourceEvidence[];
+  subreddits: SubredditConfig[];
   templates: QueryTemplate[];
   themes: QueryThemeInsight[];
 }) {
-  const [messages, setMessages] = useState<ChatMessageType[]>(thread.messages);
+  const [messages, setMessages] = useState<ChatMessageType[]>(
+    thread.messages.filter((message) => !message.content.toLowerCase().includes("mock")),
+  );
+  const [currentAnswer, setCurrentAnswer] = useState(answer);
+  const [currentSources, setCurrentSources] = useState(sources);
+  const [selectedSubreddit, setSelectedSubreddit] = useState("");
+  const [currentSubredditFilter, setCurrentSubredditFilter] = useState<string | null>(
+    null,
+  );
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [hasLiveAnswer, setHasLiveAnswer] = useState(false);
+  const [exportState, setExportState] = useState<
+    | { status: "idle" }
+    | { status: "saving" }
+    | { status: "saved"; path: string }
+    | { status: "error"; message: string }
+  >({ status: "idle" });
 
-  const activeSourceIds = useMemo(
-    () => new Set(sources.map((source) => source.id)),
-    [sources],
+  const subredditOptions = useMemo(
+    () => Array.from(new Set(subreddits.map((subreddit) => subreddit.name))).sort(),
+    [subreddits],
   );
 
-  function handleSubmit(content: string) {
+  const activeSourceIds = useMemo(
+    () => new Set(currentSources.map((source) => source.id)),
+    [currentSources],
+  );
+
+  async function handleSubmit(content: string) {
     const createdAt = new Date().toISOString();
+    const loadingId = `msg-assistant-loading-${Date.now()}`;
     const userMessage: ChatMessageType = {
       id: `msg-user-${Date.now()}`,
       role: "user",
       content,
       created_at: createdAt,
     };
-    const assistantMessage: ChatMessageType = {
-      id: `msg-assistant-${Date.now()}`,
+    const loadingMessage: ChatMessageType = {
+      id: loadingId,
       role: "assistant",
-      content:
-        "Mock response: I would retrieve fresh chunks for that follow-up, compare them against the current source trail, and answer with citations. For now, this prototype reuses the same fixture-backed evidence so you can evaluate the chat workflow before the backend exists.",
-      created_at: new Date(Date.now() + 1000).toISOString(),
-      citation_source_ids: sources.slice(0, 2).map((source) => source.id),
+      content: "Retrieving relevant chunks and asking the local model...",
+      created_at: new Date().toISOString(),
     };
 
-    setMessages((current) => [...current, userMessage, assistantMessage]);
+    setErrorMessage(null);
+    setExportState({ status: "idle" });
+    setIsLoading(true);
+    setMessages((current) => [...current, userMessage, loadingMessage]);
+
+    try {
+      const liveAnswer = await askLiveQuestion({
+        workspace_id: thread.workspace_id,
+        question: content,
+        subreddit: selectedSubreddit || undefined,
+        top_k: 5,
+      });
+      const assistantMessage: ChatMessageType = {
+        id: `msg-assistant-${Date.now()}`,
+        role: "assistant",
+        content: liveAnswer.answer_text,
+        created_at: new Date().toISOString(),
+        citation_source_ids: liveAnswer.sources.map((source) => source.id),
+      };
+      setCurrentAnswer(liveAnswer);
+      setCurrentSources(liveAnswer.sources);
+      setCurrentSubredditFilter(selectedSubreddit || null);
+      setHasLiveAnswer(true);
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === loadingId ? assistantMessage : message,
+        ),
+      );
+    } catch (error) {
+      const message =
+        error instanceof LiveApiError
+          ? `${error.code}: ${error.message}`
+          : error instanceof Error
+            ? error.message
+            : "Query failed.";
+      setErrorMessage(message);
+      setMessages((current) =>
+        current.map((chatMessage) =>
+          chatMessage.id === loadingId
+            ? {
+                id: `msg-system-${Date.now()}`,
+                role: "system",
+                content: `Query failed: ${message}`,
+                created_at: new Date().toISOString(),
+              }
+            : chatMessage,
+        ),
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleExport() {
+    if (!hasLiveAnswer) {
+      return;
+    }
+    setExportState({ status: "saving" });
+    try {
+      const result = await exportLiveAnswer({
+        question: currentAnswer.question,
+        subreddit: currentSubredditFilter,
+        answer_text: currentAnswer.answer_text,
+        sources: currentSources,
+      });
+      setExportState({ status: "saved", path: result.path });
+    } catch (error) {
+      const message =
+        error instanceof LiveApiError
+          ? `${error.code}: ${error.message}`
+          : error instanceof Error
+            ? error.message
+            : "Export failed.";
+      setExportState({ status: "error", message });
+    }
   }
 
   return (
@@ -78,7 +183,7 @@ export function QueryWorkspace({
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <div className="mb-2 flex flex-wrap items-center gap-2">
-                <Badge variant="warning">Mock conversation</Badge>
+                <Badge variant="success">Live RAG</Badge>
                 <Badge variant="secondary">{thread.title}</Badge>
               </div>
               <CardTitle className="flex items-center gap-2">
@@ -86,23 +191,38 @@ export function QueryWorkspace({
                 Chat with subreddit evidence
               </CardTitle>
               <CardDescription>
-                Ask follow-ups in an LLM-style workspace while keeping citations
-                and themes available in the right sidebar.
+                Ask questions against indexed Chroma chunks while keeping
+                citations and evidence available in the right sidebar.
               </CardDescription>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setIsSidebarOpen((current) => !current)}
-              aria-expanded={isSidebarOpen}
-            >
-              {isSidebarOpen ? (
-                <PanelRightClose className="h-4 w-4" aria-hidden />
-              ) : (
-                <PanelRightOpen className="h-4 w-4" aria-hidden />
-              )}
-              {isSidebarOpen ? "Hide context" : "Show context"}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleExport}
+                disabled={!hasLiveAnswer || exportState.status === "saving"}
+              >
+                {exportState.status === "saving" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                ) : (
+                  <Download className="h-4 w-4" aria-hidden />
+                )}
+                Export Markdown
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsSidebarOpen((current) => !current)}
+                aria-expanded={isSidebarOpen}
+              >
+                {isSidebarOpen ? (
+                  <PanelRightClose className="h-4 w-4" aria-hidden />
+                ) : (
+                  <PanelRightOpen className="h-4 w-4" aria-hidden />
+                )}
+                {isSidebarOpen ? "Hide context" : "Show context"}
+              </Button>
+            </div>
           </div>
         </CardHeader>
 
@@ -118,14 +238,41 @@ export function QueryWorkspace({
                       activeSourceIds.has(id),
                     ),
                   }}
-                  sources={sources}
+                  sources={currentSources}
                 />
               ))}
             </div>
           </ScrollArea>
 
           <div className="border-t bg-slate-50/80 p-4">
-            <ChatComposer onSubmit={handleSubmit} />
+            {errorMessage ? (
+              <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {errorMessage}
+              </div>
+            ) : null}
+            {exportState.status === "saved" ? (
+              <div className="mb-3 rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+                Export saved to <span className="font-mono">{exportState.path}</span>
+              </div>
+            ) : null}
+            {exportState.status === "error" ? (
+              <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {exportState.message}
+              </div>
+            ) : null}
+            <ChatComposer
+              onSubmit={handleSubmit}
+              disabled={isLoading}
+              selectedSubreddit={selectedSubreddit}
+              subredditOptions={subredditOptions}
+              onSubredditChange={setSelectedSubreddit}
+              helperText={
+                isLoading
+                  ? "Waiting for retrieval and local generation."
+                  : "Press Ctrl+Enter or Cmd+Enter to send."
+              }
+              submitLabel={isLoading ? "Asking..." : "Ask RAG"}
+            />
           </div>
         </CardContent>
       </Card>
@@ -133,8 +280,8 @@ export function QueryWorkspace({
       {isSidebarOpen ? (
         <div className="xl:sticky xl:top-8 xl:h-[calc(100vh-4rem)]">
           <QueryEvidenceSidebar
-            answer={answer}
-            sources={sources}
+            answer={currentAnswer}
+            sources={currentSources}
             templates={templates}
             themes={themes}
             onClose={() => setIsSidebarOpen(false)}

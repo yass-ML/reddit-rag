@@ -43,7 +43,7 @@ export function ChatMessage({
             {message.role === "assistant"
               ? "Assistant"
               : message.role === "system"
-                ? "Mock system"
+                ? "System"
                 : "You"}
           </Badge>
           <time
@@ -72,7 +72,7 @@ export function ChatMessage({
                 className="h-8 bg-white/90 text-xs text-foreground"
               >
                 <Link href="/sources">
-                  Source {index + 1}
+                  Source {source.citation_index ?? index + 1}
                   <span className="font-mono text-muted-foreground">
                     r/{source.subreddit}
                   </span>
