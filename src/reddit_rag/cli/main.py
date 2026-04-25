@@ -20,7 +20,14 @@ from reddit_rag.env import (
 from reddit_rag.ingestion.raw_ingestion import fetch_thread_to_raw, ingest_subreddit_raw
 from reddit_rag.ingestion.reddit_source import JsonRedditSource, RedditJsonResponse, RedditSourceError
 from reddit_rag.paths import resolve_processed_dir
-from reddit_rag.processing.normalize import NormalizedPost
+from reddit_rag.processing.comments import (
+    comment_record_to_dict,
+    default_comments_jsonl_path,
+    merge_comment_records_jsonl,
+    normalize_comments_from_subreddit,
+    normalize_comments_from_thread_file,
+)
+from reddit_rag.processing.normalize import NormalizedComment, NormalizedPost
 from reddit_rag.processing.posts import (
     default_posts_jsonl_path,
     merge_post_records_jsonl,
@@ -135,6 +142,26 @@ def _cmd_fetch_thread(args: argparse.Namespace) -> int:
     return 0
 
 
+def _format_comment_pretty(comment: NormalizedComment) -> str:
+    lines = [
+        f"subreddit: {comment.subreddit}",
+        f"permalink: {comment.permalink}",
+        f"id: {comment.id} (reddit_id={comment.reddit_id})",
+        f"post_reddit_id: {comment.post_reddit_id}  parent_reddit_id: {comment.parent_reddit_id}",
+        f"score: {comment.score}",
+    ]
+    if comment.author:
+        lines.append(f"author: {comment.author}")
+    if comment.created_utc is not None:
+        lines.append(f"created_utc: {comment.created_utc}")
+    lines.append(f"raw_path: {comment.raw_path}")
+    lines.append("")
+    body = comment.body if comment.body.strip() else "[empty body]"
+    lines.append(body)
+    lines.append("-" * 72)
+    return "\n".join(lines)
+
+
 def _format_post_pretty(post: NormalizedPost) -> str:
     lines = [
         f"title: {post.title}",
@@ -214,6 +241,67 @@ def _cmd_normalize_posts(args: argparse.Namespace) -> int:
     if args.pretty:
         for post in posts:
             print(_format_post_pretty(post), file=sys.stdout)
+
+    return 0
+
+
+def _cmd_normalize_comments(args: argparse.Namespace) -> int:
+    raw_dir = Path(args.raw_dir).expanduser().resolve() if args.raw_dir else None
+    try:
+        if args.thread:
+            path = Path(args.thread).expanduser().resolve()
+            comments = normalize_comments_from_thread_file(path)
+        elif args.subreddit:
+            comments = normalize_comments_from_subreddit(args.subreddit, raw_dir=raw_dir)
+        else:
+            print("Specify --thread PATH or --subreddit NAME.", file=sys.stderr)
+            return 1
+    except (ValueError, OSError) as e:
+        print(str(e), file=sys.stderr)
+        return 1
+
+    records = [comment_record_to_dict(c) for c in comments]
+
+    processed_root = (
+        Path(args.processed_dir).expanduser().resolve() if args.processed_dir else resolve_processed_dir()
+    )
+
+    if not args.pretty:
+        if not records:
+            print("No comments normalized (empty input).", file=sys.stdout)
+        else:
+            if args.output:
+                out_path = Path(args.output).expanduser().resolve()
+                result = merge_comment_records_jsonl(out_path, records)
+                print(
+                    "Merged JSONL: "
+                    f"path={result.path} "
+                    f"existing={result.existing_count} "
+                    f"appended={result.appended} "
+                    f"skipped_duplicates={result.skipped_duplicates} "
+                    f"total={result.total_after}",
+                    file=sys.stdout,
+                )
+            else:
+                by_sub: defaultdict[str, list] = defaultdict(list)
+                for comment in comments:
+                    by_sub[comment.subreddit].append(comment_record_to_dict(comment))
+                for subreddit in sorted(by_sub.keys()):
+                    out_path = default_comments_jsonl_path(processed_root, subreddit)
+                    result = merge_comment_records_jsonl(out_path, by_sub[subreddit])
+                    print(
+                        "Merged JSONL: "
+                        f"path={result.path} "
+                        f"existing={result.existing_count} "
+                        f"appended={result.appended} "
+                        f"skipped_duplicates={result.skipped_duplicates} "
+                        f"total={result.total_after}",
+                        file=sys.stdout,
+                    )
+
+    if args.pretty:
+        for comment in comments:
+            print(_format_comment_pretty(comment), file=sys.stdout)
 
     return 0
 
@@ -401,6 +489,40 @@ def main() -> None:
         help="Print human-readable post content to stdout.",
     )
     p_norm.set_defaults(func=_cmd_normalize_posts)
+
+    p_norm_comments = sub.add_parser(
+        "normalize-comments",
+        help="Normalize saved raw thread JSON into NormalizedComment records (JSONL and/or readable output).",
+    )
+    p_norm_comments.add_argument(
+        "--thread",
+        help="Path to one saved raw thread JSON file (under .../threads/<id>.json).",
+    )
+    p_norm_comments.add_argument(
+        "--subreddit",
+        help="Subreddit name; reads all JSON files from <raw-dir>/<name>/threads/.",
+    )
+    p_norm_comments.add_argument(
+        "--raw-dir",
+        help="Override raw data root (default: REDDIT_RAG_RAW_DIR or <project>/data/raw).",
+    )
+    p_norm_comments.add_argument(
+        "--processed-dir",
+        help="Override processed data root for default JSONL paths (default: REDDIT_RAG_PROCESSED_DIR or <project>/data/processed).",
+    )
+    p_norm_comments.add_argument(
+        "--output",
+        help=(
+            "JSONL output path (one NormalizedComment per line). Merges with existing file by reddit_id. "
+            "Default when omitted: <processed>/<subreddit>/comments.jsonl (one file per subreddit)."
+        ),
+    )
+    p_norm_comments.add_argument(
+        "--pretty",
+        action="store_true",
+        help="Print human-readable comment content to stdout.",
+    )
+    p_norm_comments.set_defaults(func=_cmd_normalize_comments)
 
     args = parser.parse_args()
     code = args.func(args)
