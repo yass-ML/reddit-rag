@@ -65,4 +65,8 @@ htmlcov/
 *.db
 chroma/
 .cache/
+data/raw/
+data/processed/
+data/chroma/
+data/exports/ # TODO ignore data except placeholder files
 
